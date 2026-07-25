@@ -79,7 +79,12 @@ class DenseMatrix(Matrix):
         if not isinstance(data, np.ndarray):
             if cupy_version is not None:
                 if not isinstance(data, cp.ndarray):
-                    data = np.asarray(data, order='F')
+                    if hw_target == "accelerator":
+                        data = cp.asarray(data, order='F')
+                    elif hw_target == "host":
+                        data = np.asarray(data, order='F')
+                    else:
+                        raise ValueError(f"Unknown hw_target: {hw_target}")
             else:
                 data = np.asarray(data, order='F')
 

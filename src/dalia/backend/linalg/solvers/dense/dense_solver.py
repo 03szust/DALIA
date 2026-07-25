@@ -180,12 +180,12 @@ class DenseSolver(LinearSolver):
                 # This allocates 2xn² additional memory at peak
 
                 # Compute L^{-1} by solving L X = I
-                L_inv = sp_la.solve_triangular(
-                    self._factors, np.eye(n), lower=True, check_finite=False
+                L_inv = trsm(
+                    self._factors, np.eye(n), hw_target=self._target, lower=True, check_finite=False
                 )
 
                 # Compute A^{-1} = L_inv^T @ L_inv
-                inv_array = L_inv.T @ L_inv
+                inv_array = gemm(L_inv, L_inv, hw_target=self._target, trans_a="T")
         elif self._target == "accelerator":
             if overwrite_factors and nvmath_version is not None:
                 # Avoid extra copies and fully work in-place.
