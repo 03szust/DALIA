@@ -56,7 +56,8 @@ class SparseSolver(LinearSolver):
             )
         else:
             raise ValueError(f"Invalid hardware target type '{self._target}'. Supported target types are {target_list}.")
-        
+
+        if self._target == "accelerator": cp.cuda.runtime.deviceSynchronize()
         return factors
     
     def _solve_system(self, b: np.ndarray):
@@ -115,4 +116,6 @@ class SparseSolver(LinearSolver):
             inv_array = cu_sp.csr_matrix(inv_array)  # Ensure the result is a sparse matrix
         else:
             raise ValueError(f"Invalid hardware target type '{self._target}'. Supported target types are {target_list}.")
+
+        if self._target == "accelerator": cp.cuda.runtime.deviceSynchronize()
         return SparseMatrix(inv_array)

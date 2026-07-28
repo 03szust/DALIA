@@ -6,8 +6,10 @@ from dalia.backend.config import cupy_version
 # Type groups - reusable across all tests
 INTERNAL_DEVICE_TYPES = ["host"]
 INTERNAL_MATRIX_TYPES = ["SparseMatrix", "DenseMatrix"]
+OVERWRITE =             [True, False]
 
 INTERNAL_DEVICE_TYPES.append(pytest.param("accelerator", marks=pytest.mark.skipif(
                 cupy_version is None,
                 reason="CuPy is not installed",
             ),))
+

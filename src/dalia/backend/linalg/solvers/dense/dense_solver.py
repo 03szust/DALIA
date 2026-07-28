@@ -9,9 +9,10 @@ import scipy.linalg as sp_la
 if cupy_version is not None:
     import cupy as cp
     import cupy.linalg as cp_la
+    from cupy.cuda import device
 
 if nvmath_version is not None:
-    from nvmath.bindings import cublas as nvcublas
+    from nvmath.bindings import cusolverDn as nvsolver
 
 from dalia.backend.linalg.solvers.linear_solver import LinearSolver
 from dalia.backend.BLAS import trsm, gemm
@@ -57,6 +58,7 @@ class DenseSolver(LinearSolver):
             factors = cp_la.cholesky(
                 self._matrix._data
             )
+            cp.cuda.runtime.deviceSynchronize()
         else:
             raise ValueError(f"Unsupported hardware target: {self._target}")
         # pylint: disable=protected-access
@@ -99,6 +101,8 @@ class DenseSolver(LinearSolver):
             overwrite_b=False,
             check_finite=False,
         )
+
+        if self._target == "accelerator": cp.cuda.runtime.deviceSynchronize()
 
         return x
 
@@ -195,17 +199,31 @@ class DenseSolver(LinearSolver):
 
                 dtype = self._factors.dtype.char
                 if dtype == 'f':
-                    func = nvcublas.spotri
+                    potri = nvsolver.spotri
+                    buffer = nvsolver.spotri_buffer_size
                 elif dtype == 'd':
-                    func = nvcublas.dpotri
+                    potri = nvsolver.dpotri
+                    buffer = nvsolver.dpotri_buffer_size
                 elif dtype == 'F':
-                    func = nvcublas.cpotri
+                    potri = nvsolver.cpotri
+                    buffer = nvsolver.cpotri_buffer_size
                 elif dtype == 'D':
-                    func = nvcublas.zpotri
+                    potri = nvsolver.zpotri
+                    buffer = nvsolver.zpotri_buffer_size
                 else:
                     raise TypeError('invalid dtype')
-                
-                inv_array, info = potri(self._factors, lower=True, overwrite_c=True)
+
+                handle = device.get_cusolver_handle()
+
+                lwork = buffer(handle, 0, n, self._factors.data.ptr, n)
+                workspace = cp.empty(lwork, dtype)
+
+                info = cp.zeros(1, dtype=cp.int32)
+                print(self._factors)
+                potri(handle, 1, n, self._factors.data.ptr, n, workspace.data.ptr, lwork, info.data.ptr)
+
+                inv_array = self._factors
+                print(inv_array)
 
                 if info != 0:
                     raise cp.linalg.LinAlgError(f"POTRI failed with error code {info}")
@@ -225,6 +243,8 @@ class DenseSolver(LinearSolver):
                 # Compute A^{-1} = L_inv^T @ L_inv
                 #inv_array = L_inv.T @ L_inv
                 inv_array = gemm(L_inv, L_inv, hw_target=self._target, trans_a="T")
+
+            cp.cuda.runtime.deviceSynchronize()
         else:
             raise ValueError(f"Invalid hardware target type '{self._target}'. Supported target types are {target_list}.")
         return DenseMatrix(inv_array)

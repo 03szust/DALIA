@@ -235,7 +235,7 @@ class Matrix(ABC):
         self._data[key] = value
 
     def __repr__(self):
-        return self._data
+        return f"{type(self).__name__}(dtype={self._data.dtype}, hw_target={self._hw_target}, override={self._override}, data=\n{self._data})"
 
     # 10. Public methods
     def copy(self):
@@ -260,7 +260,7 @@ class Matrix(ABC):
         False
         >>> duplicate[0, 0] = 999  # Does not affect original
         """
-        return type(self)(self._data.copy())
+        return type(self)(self._data.copy(), hw_target=self._hw_target, override=self._override)
 
     def toarray(self):
         """Convert Matrix to dense numpy array (explicit conversion).

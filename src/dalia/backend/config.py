@@ -1,13 +1,18 @@
 
+import os
+
 default_hw_target = "host"
 memory_regime = "manual"
 memory_threshold = 0.95
 cupy_version = None
 nvmath_version = None
 gputil_version = None
+mpi_version = None
+nccl_version = None
 target_list = ["host"]
 regime_list = ["manual"]
 default_override = False
+mpi_cuda_aware = False
 
 def check_cupy_availability():
     """Check if CuPy is available.
@@ -29,10 +34,10 @@ def check_cupy_availability():
     return cupy_version
 
 def check_nvmath_availability():
-    """Check if NVIDIA Math Libraries are available.
+    """Check if nvmath is available.
     
     Returns:
-        str or None: The version of NVIDIA Math Libraries if available, otherwise None.
+        str or None: The version of nvmath if available, otherwise None.
     """
     global nvmath_version
     try:
@@ -43,10 +48,10 @@ def check_nvmath_availability():
     return nvmath_version
 
 def check_gputil_availability():
-    """Check if NVIDIA Math Libraries are available.
+    """Check if gputil is available.
     
     Returns:
-        str or None: The version of NVIDIA Math Libraries if available, otherwise None.
+        str or None: The version of gputil  if available, otherwise None.
     """
     global gputil_version
     try:
@@ -59,6 +64,37 @@ def check_gputil_availability():
     except ImportError:
         pass
     return gputil_version
+
+def check_mpi4py_availability():
+    """Check if mpi4py is available.
+    
+    Returns:
+        str or None: The version of mpi4py if available, otherwise None.
+    """
+    global mpi_version
+    try:
+        import mpi4py
+        mpi_version = mpi4py.__version__
+        if cupy_version is not None and os.environ.get("MPI_CUDA_AWARE", "0") == "1":
+            global mpi_cuda_aware
+            mpi_cuda_aware = True
+    except ImportError:
+        pass
+    return mpi_version
+
+def check_nccl_availability():
+    """Check if NCCL is available.
+    
+    Returns:
+        str or None: The version of NCCL if available, otherwise None.
+    """
+    global nccl_version
+    try:
+        import nccl
+        nccl_version = nccl.__version__
+    except ImportError:
+        pass
+    return nccl_version
 
 def set_default_hw_target(hw_target):
     """Set the default hardware target.

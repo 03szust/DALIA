@@ -13,14 +13,15 @@ if nccl_version is not None:
     import nccl
     import cupy.cuda.nccl as cupy_nccl
 
-# TODO: are these two functions really needed?
-def get_host(matrix):
-    matrix.to_host()
-    return matrix
+def synchronize_host(comm):
+    """Synchronize all host processes."""
+    if mpi_version is not None:
+        comm.Barrier()
 
-def get_accelerator(matrix):
-    matrix.to_accelerator()
-    return matrix
+def synchronize_accelerator():
+    """Synchronize all accelerator processes."""
+    if cupy_version is not None:
+        cp.cuda.runtime.deviceSynchronize()
 
 def get_active_comm(
         comm,

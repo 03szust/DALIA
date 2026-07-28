@@ -5,6 +5,7 @@ import numpy as np
 
 if cupy_version is not None:
     import cupy as cp
+    import cupyx.scipy.sparse as cu_sp
 if nvmath_version is not None:
     import nvmath as nm
     from nvmath.bindings import cudss
@@ -207,14 +208,17 @@ class CuDSS(SparseSolver):
             self._b,
         )
 
+        cp.cuda.runtime.deviceSynchronize()
         return x if self._rhs > 1 else x.ravel()
     
     def _compute_logdet(self):
         raise NotImplementedError("Log-determinant computation is not supported in cuDSS. Use SparseSolver instead.")
     
-    def _compute_selected_inverse(self):
+    def _compute_selected_inverse(self, overwrite_factors = False):
         # WARNING: Not really selected inversion, bad for big operations.
+        from dalia.backend.datastructures import SparseMatrix
         self._b = cp.eye(self._n, dtype=self._dtype)
+        b = self._b
         self._b = cudss.matrix_create_dn(
             self._n,  # nrows
             self._n,  # ncols (number of RHS)
@@ -233,7 +237,6 @@ class CuDSS(SparseSolver):
             self._cudss_dtype,  # complex128
             cudss.Layout.COL_MAJOR,  # column-major (Fortran style)
         )
-
         cudss.execute(
             self.cudss_handle,
             cudss.Phase.SOLVE,
@@ -243,6 +246,7 @@ class CuDSS(SparseSolver):
             self._x,
             self._b,
         )
-
-        return x
+        x = cu_sp.csr_matrix(x)
+        cp.cuda.runtime.deviceSynchronize()
+        return SparseMatrix(x)
     

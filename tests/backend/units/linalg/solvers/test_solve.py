@@ -9,7 +9,7 @@ from dalia.backend.config import memory_regime, cupy_version, nvmath_version
 if cupy_version is not None:
     import cupy as cp
 
-from .conftest import INTERNAL_DEVICE_TYPES, INTERNAL_MATRIX_TYPES
+from .conftest import INTERNAL_DEVICE_TYPES
 
 class TestSolve:
 
