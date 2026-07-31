@@ -36,6 +36,7 @@ class LinearSolver(ABC):
         """
         self._matrix: Matrix = matrix
         self._overwrite_matrix: bool = overwrite_matrix
+        self._is_analyzed: bool = False
         self._is_factorized: bool = False
         self._factors: Matrix = None
         self._target = self._choose_target()
@@ -64,6 +65,7 @@ class LinearSolver(ABC):
             raise ValueError("Cannot change matrix shape after solver creation")
 
         self._matrix: Matrix = new_matrix
+        self._is_analyzed: bool = False
         self._is_factorized: bool = False  # Invalidate factorization
         self._target = self._choose_target()  # Update target if needed
 

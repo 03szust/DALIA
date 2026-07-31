@@ -123,7 +123,7 @@ class Matrix(ABC):
         
         self._hw_target = hw_target
         self._data = data
-        self._override = override
+        self._override = override #TODO: change this to actually mean something. right now it doesn't do anything
 
     # 3. Special representation methods
 

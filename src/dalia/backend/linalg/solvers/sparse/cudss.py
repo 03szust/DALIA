@@ -27,9 +27,6 @@ class CuDSS(SparseSolver):
             raise ImportError("NVMATH is required for CuDSS. Please install NVMATH to use this solver.")
         super().__init__(matrix)
 
-        self._is_analyzed = False
-        self._is_factorized = False
-
         self._A_csr = matrix._data
         self._data = self._A_csr.data
         self._indices = self._A_csr.indices

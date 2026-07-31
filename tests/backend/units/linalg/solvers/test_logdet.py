@@ -37,7 +37,7 @@ class TestSolve:
         # Verify the solution is correct
         assert np.allclose(np.linalg.slogdet(A.toarray())[1], x)
 
-    @pytest.mark.skip()
+    @pytest.mark.skip(reason="not implemented")
     def test_ld_cudss(self, matrix_factory):
         """Test solving a linear system using CuDSS."""
         if cupy_version is None:

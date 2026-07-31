@@ -175,6 +175,23 @@ def set_override(override):
     default_override = override
     return default_override
 
+def compare_version(v1, v2):
+    v1_parts = [int(v) for v in v1.split(".")]
+    v2_parts = [int(v) for v in v2.split(".")]
+    
+    # Compare each part
+    max_length = max(len(v1_parts), len(v2_parts))
+    for i in range(max_length):
+        # Get part value or 0 if missing
+        v1 = v1_parts[i] if i < len(v1_parts) else 0
+        v2 = v2_parts[i] if i < len(v2_parts) else 0
+        
+        if v1 > v2:
+            return True
+        elif v1 < v2:
+            return False
+    return False
+
 __all__ = [
     "default_hw_target",
     "memory_regime",

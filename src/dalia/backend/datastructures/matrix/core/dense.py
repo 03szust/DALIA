@@ -75,7 +75,6 @@ class DenseMatrix(Matrix):
             
             if isinstance(data, cp.ndarray) and data.flags.c_contiguous and force_order:
                 data = cp.asfortranarray(data)
-        # TODO: allow for accelerator arrays that are not cp.ndarray    
         if not isinstance(data, np.ndarray):
             if cupy_version is not None:
                 if not isinstance(data, cp.ndarray):

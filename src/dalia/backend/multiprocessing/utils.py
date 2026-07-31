@@ -6,12 +6,14 @@ from dalia.backend.config import  cupy_version, mpi_version, nccl_version, mpi_c
 if cupy_version is not None:
     import cupy as cp
 
+    if nccl_version is not None:
+        import nccl
+        import cupy.cuda.nccl as cupy_nccl
+
 if mpi_version is not None:
     from mpi4py import MPI
 
-if nccl_version is not None:
-    import nccl
-    import cupy.cuda.nccl as cupy_nccl
+
 
 def synchronize_host(comm):
     """Synchronize all host processes."""
@@ -54,3 +56,68 @@ def get_active_comm(
             exit()
 
         return active_comm
+
+def get_mpi_operation(
+        op
+    ):
+    if op == "sum":
+        op = MPI.SUM
+    elif op =="max":
+        op = MPI.MAX
+    elif op =="min":
+        op = MPI.MIN
+    elif op =="product":
+        op = MPI.PROD
+    elif op =="land":
+        op = MPI.LAND
+    elif op =="band":
+        op = MPI.BAND
+    elif op =="avg":
+        raise NotImplementedError("average is not a mpi operation")            
+    else:
+        raise ValueError("unknown operation")
+
+def get_nccl_operation(
+        op
+    ):
+    if op == "sum":
+        op = cupy_nccl.NCCL_SUM
+    elif op =="max":
+        op = cupy_nccl.NCCL_MAX
+    elif op =="min":
+        op = cupy_nccl.NCCL_MIN
+    elif op =="product":
+        op = cupy_nccl.NCCL_PROD
+    elif op =="avg":
+        op = cupy_nccl.NCCL_AVG
+    elif op =="land":
+        raise NotImplementedError("logical and is not a nccl operation")
+    elif op =="band":
+        raise NotImplementedError("bitwise and is not a nccl operation")             
+    else:
+        raise ValueError("unknown operation")
+
+def get_accelerator_count():
+    if cupy_version is not None:
+        if cp.is_available():
+            num_cuda = cp.cuda.runtime.getDeviceCount()
+            accelerators = []
+            for i in range(0, num_cuda):
+                accelerators += [i]
+            return num_cuda, accelerators
+        return 0, None
+
+def comm_decider(comm_type, obj):
+    if comm_type == "all":
+        return True, True
+    
+    elif comm_type == "mpi":
+        return True, False
+    
+    elif comm_type == "nccl":
+        return False, True
+    
+    elif comm_type == "auto":
+        # TODO: automatic choice of best library depending on hardware location and availability
+        # currently hard coded to use MPI
+        return True, False

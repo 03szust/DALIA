@@ -1,7 +1,6 @@
 
 from dalia.backend.config import mpi_version
 import pytest
-from pathlib import Path
 
 class TestMPI:
 

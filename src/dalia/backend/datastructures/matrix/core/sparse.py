@@ -63,7 +63,8 @@ class SparseMatrix(Matrix):
                 "Use DenseMatrix instead, or convert to sparse format first with "
                 "scipy.sparse.csr_matrix(array)."
             )
-        
+
+        #TODO: maybe change this to convert to csr array. might be inefficient on the array though
         if cupy_version is not None:
             if isinstance(data, cp.ndarray):
                 raise TypeError(
