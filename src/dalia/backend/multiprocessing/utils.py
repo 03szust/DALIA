@@ -121,3 +121,19 @@ def comm_decider(comm_type, obj):
         # TODO: automatic choice of best library depending on hardware location and availability
         # currently hard coded to use MPI
         return True, False
+
+def get_nccl_dtype(dtype):
+    if dtype == cp.float32:
+        return cupy_nccl.NCCL_FLOAT32
+    elif dtype == cp.float64:
+        return cupy_nccl.NCCL_FLOAT64
+    elif dtype == cp.complex64:
+        return cupy_nccl.NCCL_COMPLEX64
+    elif dtype == cp.complex128:
+        return cupy_nccl.NCCL_COMPLEX128
+    elif dtype == cp.int32:
+        return cupy_nccl.NCCL_INT32
+    elif dtype == cp.int64:
+        return cupy_nccl.NCCL_INT64
+    else:
+        raise ValueError(f"Unsupported data type {dtype} for NCCL communication")

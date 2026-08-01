@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from dalia.backend.config import  cupy_version, mpi_version, nccl_version, mpi_cuda_aware, compare_version
 from dalia.backend.datastructures import Matrix
-from dalia.backend.multiprocessing.utils import get_active_comm, synchronize_host, synchronize_accelerator, get_mpi_operation, get_accelerator_count, comm_decider, get_nccl_operation
+from dalia.backend.multiprocessing.utils import get_active_comm, synchronize_host, synchronize_accelerator, get_mpi_operation, get_accelerator_count, comm_decider, get_nccl_operation, get_nccl_dtype
 
 if cupy_version is not None:
     import cupy as cp
@@ -45,7 +45,7 @@ class Communicator:
     size: int = 1
     comm: 'MPI.Comm' = None  # Type hint for MPI communicator
 
-    nccl_comms: list = field(default_factory=list) # list of nccl communicators
+    nccl_comms: dict = field(default_factory=dict) # list of nccl communicators
     nccl_id: bytes = None
 
     no_mpi: bool = False
@@ -70,24 +70,24 @@ class Communicator:
 
         if nccl_version is not None or self.no_nccl:
             
-            accelerator_count, accelerator_list = get_accelerator_count()
+            accelerator_count, self.nccl_accelerators = get_accelerator_count()
             if self.comm is None:
                 self.nccl_id = cupy_nccl.get_unique_id()
-                self.nccl_comms = cupy_nccl.initAll(accelerator_list)
+                self.nccl_comms = cupy_nccl.initAll(self.nccl_accelerators)
             else:
                 if self.rank == 0:
                     self.nccl_id = cupy_nccl.get_unique_id()
                 self.nccl_id = self.comm.bcast(self.nccl_id, root=0)
 
                 local_accelerators = []
-                for accelerator_id in accelerator_list:
+                for accelerator_id in self.nccl_accelerators:
                     if accelerator_id % self.size == self.rank:
                         local_accelerators.append(accelerator_id)
 
                 for accelerator_id in local_accelerators:
                     cp.cuda.Device(accelerator_id).use()
                     nccl_comm = cupy_nccl.NcclCommunicator(accelerator_count, self.nccl_id, accelerator_id)
-                    self.nccl_comms.append(nccl_comm)
+                    self.nccl_comms[accelerator_id] = nccl_comm
 
                 self.comm.Barrier()
         else:
@@ -101,9 +101,10 @@ class Communicator:
     def bcast(
             self, 
             obj: Matrix, 
-            root=0,
-            comm_type="auto",
-            stream = None
+            root = 0,
+            comm_type = "auto",
+            stream = None,
+            accelerator_id = None
     ):
         """
         Broadcast data from the root process to all other processes within the given communication group.
@@ -128,14 +129,21 @@ class Communicator:
                 self.comm.Bcast(obj._data, root=root)
             return obj
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                nccl_comm = self.nccl_comms[accelerator_id]
             if stream is None:
                 stream = cp.cuda.Stream.null
             if  obj._hw_target == "host" and not mpi_cuda_aware:
                 obj.toaccelerator()
-                self.comm.bcast(obj._data.data.ptr, obj._data.size, obj._data.dtype, root, stream.ptr)
+                nccl_comm.bcast(obj._data.data.ptr, obj._data.size, obj._data.dtype, root, stream.ptr)
                 obj.tohost()
             else:
-                self.comm.bcast(obj._data.data.ptr, obj._data.size, obj._data.dtype, root, stream.ptr)
+                nccl_comm.bcast(obj._data.data.ptr, obj._data.size, obj._data.dtype, root, stream.ptr)
         return obj
 
     def send(
@@ -144,7 +152,8 @@ class Communicator:
             dest: int, tag: 
             int = 0, 
             comm_type = "auto",
-            stream = None
+            stream = None,
+            accelerator_id = None
     ):
         """
         Send data to a specific process.
@@ -170,14 +179,21 @@ class Communicator:
             else:
                 self.comm.Send(obj._data, dest=dest, tag=tag)
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                nccl_comm = self.nccl_comms[accelerator_id]
             if stream is None:
                 stream = cp.cuda.Stream.null
             if  obj._hw_target == "host" and not mpi_cuda_aware:
                 obj.toaccelerator()
-                self.comm.send(obj._data.data.ptr, obj._data.size, obj._data.dtype, dest, stream.ptr)
+                nccl_comm.send(obj._data.data.ptr, obj._data.size, obj._data.dtype, dest, stream.ptr)
                 obj.tohost()
             else:
-                self.comm.send(obj._data.data.ptr, obj._data.size, obj._data.dtype, dest, stream.ptr)
+                nccl_comm.send(obj._data.data.ptr, obj._data.size, obj._data.dtype, dest, stream.ptr)
         return obj
 
     def recv(
@@ -216,7 +232,8 @@ class Communicator:
                 stream = cp.cuda.Stream.null
             if  obj._hw_target == "host" and not mpi_cuda_aware:
                 obj.toaccelerator()
-                self.comm.recv(obj._data.data.ptr, obj._data.size, obj._data.dtype, source, stream.ptr)
+                nccl_dtype = get_nccl_dtype(obj._data.dtype)
+                self.comm.recv(obj._data.data.ptr, obj._data.size, nccl_dtype, source, stream.ptr)
                 obj.tohost()
             else:
                 self.comm.recv(obj._data.data.ptr, obj._data.size, obj._data.dtype, source, stream.ptr)
@@ -273,7 +290,9 @@ class Communicator:
     def allgather(
             self,
             sendbuf: Matrix,
-            comm_type = "auto"
+            comm_type = "auto",
+            stream = None,
+            accelerator_id = None
     ):
         """
         Gather data to all processes
@@ -307,12 +326,24 @@ class Communicator:
                 out.append(m)
             return out
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                if accelerator_id in self.nccl_comms:
+                    nccl_comm = self.nccl_comms[accelerator_id]
+                else:
+                    raise ValueError(f"Accelerator {accelerator_id} is not available in the communicator")
+            if stream is None:
+                stream = cp.cuda.Stream.null
             hw_target = sendbuf._hw_target
             if  sendbuf._hw_target == "host":
                 sendbuf.toaccelerator()
-
+            nccl_dtype = get_nccl_dtype(sendbuf._data.dtype)
             recvbuf = cp.empty((self.size * sendbuf.shape[0], sendbuf.shape[1]), dtype=sendbuf._data.dtype)
-            self.comm.allgather(sendbuf._data, recvbuf)
+            nccl_comm.allGather(sendbuf._data.data.ptr, recvbuf.data.ptr, sendbuf._data.size, nccl_dtype, stream.ptr)
             recvbuf = cp.split(recvbuf, self.size, axis=0)
             out = list()
             for i in recvbuf:
@@ -386,7 +417,8 @@ class Communicator:
             root: int = 0,
             factor: int = 1,
             comm_type = "auto",
-            stream = None
+            stream = None,
+            accelerator_id = None
         ):
         """
         Perform a reduction operation to a specific processes.
@@ -422,19 +454,27 @@ class Communicator:
                 recvbuf.toaccelerator()
             
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                nccl_comm = self.nccl_comms[accelerator_id]
             if stream is None:
                 stream = cp.cuda.Stream.null
 
             if recvbuf._hw_target == "host" and not mpi_cuda_aware:
                 recvbuf.toaccelerator()
 
+            nccl_dtype = get_nccl_dtype(recvbuf._data.dtype)
             op = get_nccl_operation(op)
             
             if self.rank == root:
-                self.comm.reduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, recvbuf._data.dtype, op, root, stream.ptr)
+                self.comm.reduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, nccl_dtype, op, root, stream.ptr)
                 recvbuf._data *= factor
             else:
-                self.comm.reduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, recvbuf._data.dtype, op, root, stream.ptr)    
+                self.comm.reduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, nccl_dtype, op, root, stream.ptr)
 
             if recvbuf._hw_target == "host"and not mpi_cuda_aware:
                 recvbuf.tohost()
@@ -447,7 +487,8 @@ class Communicator:
             op: str = "sum",
             factor: int = 1,
             comm_type = "auto",
-            stream = None
+            stream = None,
+            accelerator_id = None
     ):
         """
         Perform a reduction operation across all processes.
@@ -478,15 +519,23 @@ class Communicator:
             if recvbuf._hw_target == "accelerator" and not mpi_cuda_aware:
                 recvbuf.toaccelerator()
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                nccl_comm = self.nccl_comms[accelerator_id]
             if stream is None:
                 stream = cp.cuda.Stream.null
 
             if recvbuf._hw_target == "host" and not mpi_cuda_aware:
                 recvbuf.toaccelerator()
 
+            nccl_dtype = get_nccl_dtype(recvbuf._data.dtype)
             op = get_nccl_operation(op)
 
-            self.comm.reduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, recvbuf._data.dtype, op, stream.ptr)
+            nccl_comm.allReduce(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, nccl_dtype, op, stream.ptr)
             recvbuf._data *= factor
 
             if recvbuf._hw_target == "host"and not mpi_cuda_aware:
@@ -500,7 +549,9 @@ class Communicator:
             op: str = "sum",
             factor: int = 1,
             recvcounts: np.array = None,
-            comm_type = "auto"
+            comm_type = "auto",
+            stream = None,
+            accelerator_id = None
         ):
         """
         Perform a reduce-scatter operation across all processes within the given communication group.
@@ -545,13 +596,21 @@ class Communicator:
             if recvbuf._hw_target == "accelerator" and not mpi_cuda_aware:
                 recvbuf.toaccelerator()
         elif len(self.nccl_comms) and is_nccl:
+            if accelerator_id is None:
+                if len(self.nccl_comms) == 1:
+                    nccl_comm = self.nccl_comms[0]
+                else:
+                    raise ValueError(f"No accelerator specified even thoug multiple are available")
+            else:
+                nccl_comm = self.nccl_comms[accelerator_id]
             if stream is None:
                 stream = cp.cuda.Stream.null
 
             if recvbuf._hw_target == "host":
                 recvbuf.toaccelerator()
 
-            op = get_mpi_operation(op)
+            nccl_dtype = get_nccl_dtype(recvbuf._data.dtype)
+            op = get_nccl_operation(op)
 
             if recvcounts is None:  
                 recvcounts = cp.full(self.size, recvbuf._data.size // self.size, dtype=cp.intc)
@@ -562,7 +621,7 @@ class Communicator:
                 raise ValueError (f"The sum of recvcounts ({np.sum(recvcounts)}) does not match the data size ({recvbuf._data.size})")
 
             # TODO: slicing to only get relevant array parts.
-            self.comm.Reduce_scatter(MPI.IN_PLACE, recvbuf._data, recvcounts, op=MPI.SUM)
+            nccl_comm.reduceScatter(recvbuf._data.data.ptr, recvbuf._data.data.ptr, recvbuf._data.size, nccl_dtype, op, stream.ptr)
             recvbuf._data *= factor
             
             if recvbuf._hw_target == "host":
