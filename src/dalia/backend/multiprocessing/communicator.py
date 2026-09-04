@@ -128,6 +128,7 @@ class Communicator:
             else:
                 self.comm.Bcast(obj._data, root=root)
             return obj
+        
         elif len(self.nccl_comms) and is_nccl:
             if accelerator_id is None:
                 if len(self.nccl_comms) == 1:
@@ -202,7 +203,8 @@ class Communicator:
             source: int, 
             tag: int = 0, 
             comm_type = "auto",
-            stream = None
+            stream = None,
+            accelerator_id = None
     ):
         """
         Receive data from a specific process.

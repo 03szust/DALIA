@@ -66,7 +66,7 @@ def get_mpi_operation(
         op = MPI.MAX
     elif op =="min":
         op = MPI.MIN
-    elif op =="product":
+    elif op =="prod":
         op = MPI.PROD
     elif op =="land":
         op = MPI.LAND

@@ -87,6 +87,7 @@ class SparseMatrix(Matrix):
                 )
 
         # Convert to canonical CSR format if needed
+        # TODO: this does not work if transpose should be a view
         if not isinstance(data, sp.csr_matrix):
             
             if cupy_version is not None:
